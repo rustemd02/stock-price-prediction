@@ -1,0 +1,266 @@
+<!DOCTYPE HTML>
+<html lang="ru">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Индекс МосБиржи и тональность новостей</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/main.css') }}">
+    <style>
+        .chart-container {
+            display: flex;
+            justify-content: space-between;
+        }
+        .chart {
+            width: 48%;
+            height: 400px; /* Устанавливаем высоту контейнера */
+        }
+        .news-container {
+            margin-top: 20px;
+            display: none; /* Скрываем блок новостей по умолчанию */
+        }
+        .news-list {
+            list-style: none;
+            padding: 0;
+        }
+        .news-item {
+            background: #f8f9fa;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .news-item a {
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+        .news-item a:hover {
+            text-decoration: underline;
+        }
+        .news-item .date {
+            display: block;
+            margin-top: 5px;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        .pagination {
+            margin-top: 20px;
+        }
+        .pagination button {
+            margin-right: 5px;
+            padding: 5px 10px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .pagination button:hover {
+            background-color: #0056b3;
+        }
+        .trend {
+            margin-top: 20px;
+            font-size: 1.5em;
+        }
+        .downward {
+            color: #3e9326;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="chart-container">
+    <div id="container1" class="chart"></div>
+    <div id="container2" class="chart"></div>
+</div>
+
+<div id="trend-container" class="trend">
+    Предсказанный тренд: <span id="trend-direction" class="downward">Восходящий</span>
+</div>
+
+<div id="news-container" class="news-container">
+    <h2>Новости</h2>
+    <ul id="news-list" class="news-list"></ul>
+    <div class="pagination">
+        <button id="prev-page">Previous</button>
+        <button id="next-page">Next</button>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/jquery-3.1.1.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/highstock.js') }}"></script>
+<script type="text/javascript">
+    let currentPage = 1;
+    const perPage = 10;
+    let currentDate = null;
+
+    function loadData(url) {
+        return fetch(url)
+            .then(response => response.text())
+            .then(data => {
+                console.log("Loaded data from", url, ":", data);
+                return data;
+            });
+    }
+
+    function parse_values_csv(data) {
+        const lines = data.split('\n');
+        const result = [];
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].split(',');
+            const date = new Date(line[0]);
+            const value = parseFloat(line[1]);
+            if (!isNaN(value)) {
+                result.push([date.getTime(), value]);
+            }
+        }
+        console.log("Parsed values.csv:", result);
+        return result;
+    }
+
+    function parse_news_sentiment_csv(data) {
+        const lines = data.split('\n');
+        const dateValues = {};
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].split(',');
+            const date = new Date(line[0]);
+            const value = parseFloat(line[1]);
+            if (!isNaN(value)) {
+                const time = date.setHours(0, 0, 0, 0); // Устанавливаем время на начало дня для группировки
+                if (!dateValues[time]) {
+                    dateValues[time] = [];
+                }
+                dateValues[time].push(value);
+            }
+        }
+
+        const result = [];
+        for (const time in dateValues) {
+            const values = dateValues[time];
+            const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
+            result.push([parseInt(time), avgValue]);
+        }
+
+        console.log("Parsed news_sentiment.csv:", result);
+        return result;
+    }
+
+    function plotGraph(container, options) {
+        Highcharts.stockChart(container, {
+            rangeSelector: {
+                selected: 1
+            },
+            yAxis: options.yAxis,
+            series: options.series,
+            legend: options.legend,
+            tooltip: {
+                pointFormat: '{series.name}: <b>{point.y}</b><br/>'
+            },
+            plotOptions: {
+                series: {
+                    dataGrouping: {
+                        units: [['week', [1]], ['month', [1, 2, 3, 4, 6]]]
+                    },
+                    point: {
+                        events: {
+                            mouseOver: function () {
+                                currentDate = new Date(this.x).toISOString().split('T')[0];
+                                currentPage = 1; // Reset to the first page
+                                showNews(currentDate, currentPage);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function showNews(date, page) {
+        fetch(`/api/news?date=${date}&page=${page}&per_page=${perPage}`)
+            .then(response => response.json())
+            .then(data => {
+                const newsContainer = document.getElementById('news-container');
+                const newsList = document.getElementById('news-list');
+                newsList.innerHTML = '';
+                data.forEach(news => {
+                    const newsItem = document.createElement('li');
+                    newsItem.classList.add('news-item');
+                    newsItem.innerHTML = `<a href="${news.url}" target="_blank">${news.title}</a><span class="date">${new Date(news.date).toLocaleDateString()}</span>`;
+                    newsList.appendChild(newsItem);
+                });
+                newsContainer.style.display = 'block';
+            })
+            .catch(error => console.error('Error fetching news:', error));
+    }
+
+    document.getElementById('prev-page').addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            showNews(currentDate, currentPage);
+        }
+    });
+
+    document.getElementById('next-page').addEventListener('click', () => {
+        currentPage++;
+        showNews(currentDate, currentPage);
+    });
+
+    Promise.all([
+        loadData('{{ url_for('static', filename='values.csv') }}'),
+        loadData('{{ url_for('static', filename='news_sentiment.csv') }}')
+    ])
+        .then(function ([valuesResult, newsSentimentResult]) {
+            const valuesData = parse_values_csv(valuesResult);
+            const newsSentimentData = parse_news_sentiment_csv(newsSentimentResult);
+
+            console.log("Values Data for Plot:", valuesData);
+            console.log("News Sentiment Data for Plot:", newsSentimentData);
+
+            plotGraph('container1', {
+                yAxis: {
+                    title: {
+                        text: 'NEWS'
+                    }
+                },
+                series: [
+                    {
+                        type: 'line',
+                        name: 'NEWS',
+                        data: newsSentimentData,
+                        color: '#0000FF'  // Синий цвет для NEWS
+                    }
+                ],
+                legend: {
+                    enabled: true
+                }
+            });
+              plotGraph('container2', {
+                yAxis: {
+                    title: {
+                        text: 'MOEX'
+                    }
+                },
+                series: [
+                    {
+                        type: 'line',
+                        name: 'IMOEX',
+                        data: valuesData,
+                        color: '#000000'  // Красный цвет для MOEX
+                    }
+                ],
+                legend: {
+                    enabled: true
+                }
+            });
+        });
+</script>
+
+<ul>
+    <li>iMOEX — индекс МосБиржи</li>
+    <li>NEWS — тональность новостей</li>
+</ul>
+</body>
+</html>
