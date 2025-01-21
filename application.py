@@ -9,6 +9,7 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
+#  http://127.0.0.1:5000/api/news?date=2025-01-20&page=1&per_page=10
 @app.route('/api/news')
 def get_news():
     date = request.args.get('date')

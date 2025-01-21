@@ -11,7 +11,7 @@ import joblib
 import re
 
 # Загрузка данных
-df = pd.read_csv("../last-work/sentiment-analysis/static/news_sentiment.csv")
+df = pd.read_csv("../last-work/sentiment-analysis/news_sentimentv5.csv")
 
 # Лемматизация и токенизация текста
 lemmatizer = WordNetLemmatizer()

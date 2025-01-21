@@ -16,7 +16,7 @@ from service_repository.models import NewsModel
 from service_repository.database import engine
 from joblib import load, dump
 
-news = pd.read_csv('../last-work/service_aggregator/news_with_probabilities.csv')
+news = pd.read_csv('../service_aggregator/news_with_probabilities.csv')
 
 # Загрузка данных индекса с правильным разделителем и именами столбцов
 index_data = pd.read_csv(
@@ -136,22 +136,22 @@ def get_probabilities(text):
     probabilities = {str(label): prob for label, prob in zip(class_labels, y_prob_new[0])}
     return probabilities
 
-# def run():
-#     SessionLocal = sessionmaker(bind=engine)
-#     db: Session = SessionLocal()
-#
-#     corpus = get_corpus_by_date_range(db, '2024-05-05 00:00:00.000000', '2024-06-05 00:00:00.000000')
-#     news = prepare_corpus(corpus)
-#     print(news)
-#     probabilities_list = []
-#     for title in news['title']:
-#         probabilities = get_probabilities(title)
-#         probabilities_list.append(probabilities)
-#
-#     # Преобразование вероятностей в DataFrame
-#     probabilities_df = pd.DataFrame(probabilities_list)
-#     news = pd.concat([news, probabilities_df], axis=1)
-#     news.to_csv('news_with_probabilities.csv', index=False)
-#
-# if __name__ == "__main__":
-#     run()
+def run():
+    SessionLocal = sessionmaker(bind=engine)
+    db: Session = SessionLocal()
+
+    corpus = get_corpus_by_date_range(db, '2025-01-05 00:00:00.000000', '2024-01-20 00:00:00.000000')
+    news = prepare_corpus(corpus)
+    print(news)
+    probabilities_list = []
+    for title in news['title']:
+        probabilities = get_probabilities(title)
+        probabilities_list.append(probabilities)
+
+    # Преобразование вероятностей в DataFrame
+    probabilities_df = pd.DataFrame(probabilities_list)
+    news = pd.concat([news, probabilities_df], axis=1)
+    news.to_csv('news_with_probabilities.csv', index=False)
+
+if __name__ == "__main__":
+    run()

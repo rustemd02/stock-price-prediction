@@ -32,6 +32,9 @@ def load_graph_builder(name):
 
 def load_graph_builders(graphs_list):
     if graphs_list is None:
+        if not os.path.exists('./graph_data'):
+            print("Directory './graph_data' does not exist.")
+            return {}
         graphs_list = next(os.walk('./graph_data'))[1]
 
     graphs = defaultdict(list)
@@ -47,7 +50,6 @@ def load_graph_builders(graphs_list):
         })
 
     return graphs
-
 
 def load_data(engine, market, day):
     if engine == 'nasdaq':
@@ -95,14 +97,16 @@ def calc_batch_values(df, builder):
 
 
 def save_values(name, values, clear=False):
-    filepath = './graph_data/{}/values.csv'.format(name)
+    directory = '../graph_data/{}'.format(name)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    filepath = os.path.join(directory, 'values.csv')
     outfile = open(filepath, 'a' if os.path.exists(filepath) and not clear else 'w')
     writer = csv.writer(outfile)
 
     for row in values:
         writer.writerow(row)
     outfile.close()
-
 
 def graphs_builder(args):
     graph_builders = load_graph_builders(args.graphs)

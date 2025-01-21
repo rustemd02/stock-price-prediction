@@ -5,7 +5,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score
 
 
-df = pd.read_csv("../last-work/sentiment-analysis/static/news_sentiment.csv")
+df = pd.read_csv("../last-work/sentiment-analysis/news_sentiment.csv")
 df.columns = ['title', 'date', 'label']
 
 def get_sentiment(label: int) -> str:

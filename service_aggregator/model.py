@@ -9,7 +9,7 @@ from joblib import dump
 from service_aggregator.dictionary_words import get_ngrams
 
 # Загрузка данных
-df = pd.read_csv("../last-work/sentiment-analysis/static/newsv6.csv", header=None)
+df = pd.read_csv("../last-work/sentiment-analysis/newsv6.csv", header=None)
 df.columns = ['uuid', 'title', 'post_dttm', 'url', 'processed_dttm', '', 'label', "type"]
 
 def assign_label(score, epsilon):
