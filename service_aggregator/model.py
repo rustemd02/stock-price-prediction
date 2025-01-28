@@ -1,4 +1,4 @@
-import  pandas as pd
+import pandas as pd
 import numpy as np
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import classification_report, accuracy_score
@@ -9,8 +9,12 @@ from joblib import dump
 from service_aggregator.dictionary_words import get_ngrams
 
 # Загрузка данных
-df = pd.read_csv("../last-work/sentiment-analysis/newsv6.csv", header=None)
-df.columns = ['uuid', 'title', 'post_dttm', 'url', 'processed_dttm', '', 'label', "type"]
+df = pd.read_csv("../static/newsv6.csv", header=None)
+df.columns = ['uuid', 'title', 'post_dttm', 'url', 'processed_dttm', 'type', "label"]
+
+# Преобразование столбца 'label' в числовой тип
+df['label'] = pd.to_numeric(df['label'], errors='coerce')
+
 
 def assign_label(score, epsilon):
     if score > epsilon:
@@ -20,6 +24,8 @@ def assign_label(score, epsilon):
     else:
         return 0
 
+
+# Предполагается, что функция get_ngrams определена где-то ранее
 X, feature_names, vectorizer = get_ngrams(df, ngram_range=(1, 2))
 weights = df['label']
 
@@ -52,16 +58,17 @@ for epsilon in epsilon_values:
     mean_accuracy = np.mean(accuracies)
 
     # Обновляем лучшее значение epsilon, если текущая точность выше
-    if mean_accuracy > best_accuracy:
+    if mean_accuracy > best_accuracy and epsilon != 0:
         best_accuracy = mean_accuracy
         best_epsilon = epsilon
 
 print(f'Лучшее значение epsilon: {best_epsilon}')
 print(f'Наилучшая точность: {best_accuracy}')
 
-# Пересчитываем метки на основе лучшего значения epsilon
-df['score'] = df['label'].apply(lambda x: assign_label(x, 0.2))
+df['score'] = df['label'].apply(lambda x: assign_label(x, best_epsilon))
 y = df['score']
+
+print(df['score'].value_counts())  # Пересчитываем метки на основе лучшего значения epsilon
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
@@ -90,5 +97,5 @@ for name, clf in classifiers.items():
 print(f"Best classifier: {best_clf_name} with score {best_clf_score}")
 
 best_clf = classifiers[best_clf_name]
-dump(best_clf, '../service_aggregator/model/best_classifier.joblib')
-dump(vectorizer, '../service_aggregator/model/vectorizer.joblib')
+dump(best_clf, 'model/best_classifier.joblib')
+dump(vectorizer, 'model/vectorizer.joblib')
