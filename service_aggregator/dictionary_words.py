@@ -17,8 +17,8 @@ mystem = Mystem()
 tokenizer = WordPunctTokenizer()
 stop_words = set(stopwords.words('russian'))
 
-
 CORPUS_COLS = ["title", "type"]
+
 
 def prepare_corpus(
         corpus: List[Tuple[NewsModel]], cols: List[str] = None) -> pd.DataFrame:
@@ -26,6 +26,7 @@ def prepare_corpus(
     cols = cols or CORPUS_COLS
     corpus_sel_col = [{"title": news.title, "type": news.type} for news in corpus]
     return pd.DataFrame(corpus_sel_col, columns=cols)
+
 
 def preprocess_text(text):
     tokens = tokenizer.tokenize(text.lower())
@@ -110,6 +111,7 @@ def get_most_common_words_from_json(data):
         for word, priority in sorted_word_counts:
             writer.writerow({'word': word, 'priority': priority, 'label': ''})
 
+
 # Вычисление релевантности терминов (RF)
 def compute_rf(tf, categories):
     rf = {category: {} for category in categories}
@@ -119,6 +121,7 @@ def compute_rf(tf, categories):
             b = sum(tf[cat][word] for cat in categories if cat != category)
             rf[category][word] = math.log2(2 + a / max(1, b))
     return rf
+
 
 def get_ngrams(corpus: pd.DataFrame, ngram_range=(1, 1)):
     vectorizer = CountVectorizer(tokenizer=preprocess_text, ngram_range=ngram_range)
@@ -178,7 +181,6 @@ def run():
     rf = compute_rf(tf, corpus_df["type"])
     thresholds = select_thresholds(rf)
     save_words_to_csv(rf, thresholds)
-
 
 
 if __name__ == "__main__":

@@ -1,18 +1,20 @@
+# base.py
 import random
 import time
-from abc import ABC, abstractstaticmethod, abstractmethod
+import uuid
+from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import List, Optional
-import uuid
-from time import sleep
-import pdb
+
 from bs4 import BeautifulSoup
 from loguru import logger
 from pytz import UTC
-from requests import Response, Session
-from requests.compat import urljoin
 from tqdm import tqdm
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 
 
 @dataclass
@@ -24,12 +26,14 @@ class News:
     uuid: str
     processed_dttm: datetime = datetime.now(tz=UTC)
 
-
     def __gt__(self, other: "News") -> bool:
         return self.post_dttm > other.post_dttm
 
 
 class BaseParser(ABC):
+    """
+    Базовый класс для парсеров.
+    """
 
     ARTICLES_BLOCK = None
     ARTICLES_ATTR = None
@@ -37,150 +41,175 @@ class BaseParser(ABC):
     ARTICLE_ATTR = None
     DATE_BLOCK = None
     DATE_ATTR = None
-    TEXT_BLOCK = None
-    TEXT_ATTR = None
     TITLE_BLOCK = None
     TITLE_ATTR = None
     URL_BLOCK = None
     URL_ATTR = None
 
     FAKE_USER_AGENT = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/102.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Macintosh; Apple Silicon Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
     )
 
-    def __init__(self, pages_url: str, source: str = None) -> None:
+    def __init__(self, pages_url: str, source: str = None, driver_path: str = None):
         self.pages_url = pages_url
         self.source = source if source else self.pages_url
-        self.session = Session()
-        self.headers = {"User-Agent": self.FAKE_USER_AGENT}
         self.page_parsed = 0
         self.processed_links = set()
+        self.driver_path = driver_path  # Путь к ChromeDriver, если не в PATH
 
     @abstractmethod
-    def _parse_date(date) -> datetime:
-        """Парсим строчку с созданием времени"""
-        raise NotImplemented
+    def _parse_date(self, date_tag) -> datetime:
+        """Парсим HTML-тег/атрибут, чтобы получить datetime объекта публикации."""
+        pass
 
     @abstractmethod
-    def _scroll_to_bottom(self):
-        raise NotImplemented
+    def _scroll_to_bottom(self, driver: webdriver.Chrome):
+        """Метод для прокрутки / подгрузки следующей порции новостей, если нужно."""
+        pass
 
-    @staticmethod
-    def _sleep():
-        rand = (random.random() + 1) * 1.5
-        time.sleep(rand)
+    def _create_driver(self) -> webdriver.Chrome:
+        """Создаём Selenium-драйвер (Chrome) без использования webdriver-manager."""
+        chrome_options = Options()
+        chrome_options.add_argument('--headless')  # Если нужно окно браузера - убрать
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument(f'user-agent={self.FAKE_USER_AGENT}')
 
-    def _do_request(self, url: str, attempt: int = 0) -> Response:
-        if attempt >= 5:
-            raise Exception("Too many attempts...")
-        try:
-            response = self.session.get(url, headers=self.headers)
-            self._sleep()
-        except:
-            self._sleep()
-            response = self._do_request(url, attempt + 1)
-        return response
-
-    def _parse_page(
-            self, stop_datetime: Optional[datetime] = None
-    ) -> List[News]:
-        # page_html = self.driver.page_source
-        response = self._do_request(self.pages_url)
-        tree = BeautifulSoup(response.content, "html.parser")
-        # находим блок со всеми новостями и в нем уже каждый блок новости
-        articles_block = tree.find(self.ARTICLES_BLOCK, self.ARTICLES_ATTR)
-        # pdb.set_trace()
-        if articles_block is not None:
-            articles = articles_block.find_all(self.ARTICLE_BLOCK, class_=self.ARTICLE_ATTR)
-            if self.URL_BLOCK:
-                articles_urls = [
-                    article.find(self.URL_BLOCK, self.URL_ATTR).a.get("href")
-                    for article in articles
-                ]
-                # pdb.set_trace()
-            else:
-                articles_urls = [article.a.get("href") for article in articles]
-            logger.info("Scraping articles on page")
-            data = []
-            for url in tqdm(articles_urls):
-                try:
-                    if url in self.processed_links:
-                        continue
-                    else:
-                        news = self._parse_article(url, stop_datetime)
-                        if news is not None:
-                            data.append(news)
-                except StopIteration:
-                    return data, True
-            return data, False
+        # Если ChromeDriver не в PATH, укажите путь:
+        if self.driver_path:
+            service = Service(executable_path=self.driver_path)
         else:
-            logger.error("Не удалось найти блок статей на странице")
-            return [], False
+            service = Service()  # Предполагается, что ChromeDriver в PATH
 
-    def _parse_article(
-        self, article_url: str, stop_datetime: Optional[datetime] = None
-    ) -> News:
-        """Парсим HTML-страницу с новостью"""
-        news_url = urljoin(self.pages_url, article_url)
-        response = self._do_request(news_url)
-        tree = BeautifulSoup(response.content, "html.parser")
-        post_date = None
-        for raw_date in tree.findAll(self.DATE_BLOCK, self.DATE_ATTR):
-            try:
-                post_date = self._parse_date(raw_date)
-                break
-            except:
-                pass
-
-        if post_date is None:
-            logger.info("Post date not available, skipping this article")
-            return None
-
-        # ограничение по временным рамкам парсинга
-        if stop_datetime and post_date and (post_date < stop_datetime):
-            logger.info(f"Time stop - {stop_datetime}")
-            raise StopIteration
-
-        try:
-            title = tree.find(self.TITLE_BLOCK, self.TITLE_ATTR).text
-            # pdb.set_trace()
-        except AttributeError:
-            logger.info("Error: Title block not found")
-            return None
-        self.processed_links.add(article_url)
-        return News(news_url, title, post_date, self.source, uuid.uuid4())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        driver.maximize_window()
+        return driver
 
     def parse(
         self,
-        max_pages: int = 1,
+        max_pages: int = 5,
         start_page: int = 1,
-        stop_datetime: Optional[datetime] = None,
-    ):
-        """Точка запуска парсера"""
+        stop_datetime: Optional[datetime] = None
+    ) -> List[dict]:
+        """
+        Точка запуска парсера.
+        :param max_pages: Максимальное количество "прокруток" или страниц.
+        :param start_page: Номер стартовой "страницы" (условно).
+        :param stop_datetime: Остановиться, если дата статьи стала меньше этого момента.
+        :return: список словарей (dict) со статьями
+        """
+        # Приведём stop_datetime к utc
         stop_datetime = stop_datetime.replace(tzinfo=UTC) if stop_datetime else None
-        assert (
-            stop_datetime is not None or max_pages is not None
-        ), "Нужно задать ограничения на парсинг"
+
+        # Открываем браузер
+        driver = self._create_driver()
+        logger.info(f"Открыт {self.pages_url}")
+        driver.get(self.pages_url)
+        time.sleep(2)  # даём странице чуть-чуть времени подгрузиться
 
         result = []
         self.page_parsed = 0
         page_number = start_page
-        # self.driver.get(self.pages_url)
-        while True:
-            logger.info(f"Scraping page №{page_number} ...")
-            data, is_breaked = self._parse_page(stop_datetime)
-            result.extend(data)
-            print(result)
-            if is_breaked:
-                break
-            page_number += 1
-            self.page_parsed += 1
-            if max_pages and page_number == start_page + max_pages:
-                # Мы прошли максимальное число страниц
-                break
-            else:
-                # self._scroll_to_bottom()
-                sleep(5)
 
-        return list(map(asdict, result))
+        try:
+            while True:
+                logger.info(f"Собираем данные c условной 'страницы' №{page_number} ...")
+                # Снимем HTML-код текущего состояния
+                page_html = driver.page_source
+                data, should_break = self._parse_page_html(page_html, stop_datetime)
+                result.extend(data)
+
+                if should_break:
+                    # Достигли нужной даты
+                    logger.info(f"Достигнуто ограничение по времени {stop_datetime}, выходим из цикла.")
+                    break
+
+                page_number += 1
+                self.page_parsed += 1
+
+                # Если достигли лимита страниц - выходим
+                if max_pages and page_number == start_page + max_pages:
+                    break
+
+                # Прокручиваем / подгружаем контент
+                self._scroll_to_bottom(driver)
+                time.sleep(3)
+
+        finally:
+            # После всех действий не забываем закрывать браузер
+            driver.quit()
+
+        # Преобразуем в список словарей, т.к. у вас дальше в коде идет asdict
+        return [asdict(news_item) for news_item in result]
+
+    def _parse_page_html(
+        self,
+        html: str,
+        stop_datetime: Optional[datetime] = None
+    ) -> (List[News], bool):
+        """
+        Разбор HTML, взятого из driver.page_source.
+        Возвращает кортеж: (список новостей, флаг остановки).
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        articles_block = soup.find(self.ARTICLES_BLOCK, self.ARTICLES_ATTR)
+        if not articles_block:
+            logger.error("Не найден блок статей на странице.")
+            return [], False
+
+        articles = articles_block.find_all(self.ARTICLE_BLOCK, class_=self.ARTICLE_ATTR)
+        logger.info(f"Найдено {len(articles)} статей на странице.")
+        data = []
+        for article in tqdm(articles):
+            # URL
+            if self.URL_BLOCK and self.URL_ATTR:
+                url_tag = article.find(self.URL_BLOCK, self.URL_ATTR)
+                if not url_tag or not url_tag.a:
+                    continue
+                url = url_tag.a.get('href')
+            else:
+                # Если не заданы отдельные блоки - берём первую <a>
+                a_tag = article.find('a')
+                if not a_tag:
+                    continue
+                url = a_tag.get('href')
+
+            if not url or url in self.processed_links:
+                continue
+
+            self.processed_links.add(url)
+
+            # Дата
+            raw_date_tag = article.find(self.DATE_BLOCK, self.DATE_ATTR)
+            if not raw_date_tag:
+                # если нет даты - пропускаем
+                continue
+            try:
+                post_date = self._parse_date(raw_date_tag)
+            except Exception as e:
+                logger.warning(f"Не удалось распарсить дату: {e}")
+                continue
+
+            if not post_date:
+                continue
+
+            # Проверяем ограничение по времени
+            if stop_datetime and post_date < stop_datetime:
+                return data, True
+
+            # Заголовок
+            title_tag = article.find(self.TITLE_BLOCK, self.TITLE_ATTR)
+            if not title_tag:
+                continue
+            title = title_tag.get_text(strip=True)
+
+            news_obj = News(
+                url=url,
+                title=title,
+                post_dttm=post_date,
+                source=self.source,
+                uuid=str(uuid.uuid4())
+            )
+            data.append(news_obj)
+        return data, False

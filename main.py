@@ -69,7 +69,7 @@ def parse_args():
     return parser.parse_args()
 
 
-#  python main.py graphs --date 2025-01-01
+#  python main.py graphs --date 2024-12-20
 if __name__ == "__main__":
     args = parse_args()
     args.fn(args)

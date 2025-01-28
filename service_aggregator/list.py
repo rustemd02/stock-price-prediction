@@ -32,9 +32,9 @@ def preprocess_text(text):
 
 def get_probabilities(df):
     df['cleaned_text'] = df['title'].apply(preprocess_text)
-    vectorizer = load('../service_aggregator/model/vectorizer.joblib')
+    vectorizer = load('model/vectorizer.joblib')
     X_new = vectorizer.transform(df['cleaned_text'])
-    clf = load('../service_aggregator/model/best_classifier.joblib')
+    clf = load('model/best_classifier.joblib')
     # Предсказание вероятностей
     y_prob_new = clf.predict_proba(X_new)
     class_labels = clf.classes_

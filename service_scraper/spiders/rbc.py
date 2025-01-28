@@ -1,8 +1,7 @@
-from datetime import datetime, timedelta
-
+# rbc.py
+from datetime import datetime
 from loguru import logger
 from pytz import UTC
-import pdb
 
 from service_scraper.spiders.base import BaseParser
 
@@ -19,19 +18,28 @@ class RBCParser(BaseParser):
     URL_BLOCK = "div"
     URL_ATTR = {"class": "q-item__wrap l-col-center-590"}
 
-    @staticmethod
-    def _parse_date(date: str) -> datetime:
+    def __init__(self, pages_url="https://www.rbc.ru/economics/?utm_source=topline", driver_path: str = None):
+        super().__init__(pages_url=pages_url, driver_path=driver_path)
+
+    def _parse_date(self, date_tag) -> datetime:
+        """
+        Извлекаем из time datetime-атрибут: <time datetime="2025-01-27T11:00:00+03:00">
+        """
+        datetime_str = date_tag.get("datetime", "")
         try:
-            # Извлекаем содержимое атрибута "datetime"
-            datetime_str = date.get("datetime")
-            # Парсим строку времени
-            date_obj = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S%z")
-            return date_obj
-        except (ValueError, TypeError):
+            dt = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S%z")
+            return dt
+        except ValueError:
             return None
 
-    def _scroll_to_bottom(self):
-        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    def _scroll_to_bottom(self, driver):
+        """
+        На РБК может быть бесконечный скролл или просто динамическая загрузка.
+        Для простоты просто листаем до конца.
+        """
+        logger.info("Прокручиваем до конца страницы RBC...")
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+
 
 class RBCEconomicsParser(RBCParser):
     ARTICLES_BLOCK = "div"
@@ -45,16 +53,9 @@ class RBCEconomicsParser(RBCParser):
     URL_BLOCK = "div"
     URL_ATTR = {"class": "item__wrap l-col-center"}
 
-    @staticmethod
-    def _parse_date(date: str) -> datetime:
-        try:
-            # Извлекаем содержимое атрибута "datetime"
-            datetime_str = date.get("datetime")
-            # Парсим строку времени
-            date_obj = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S%z")
-            return date_obj
-        except (ValueError, TypeError):
-            return None
+    def __init__(self, pages_url="https://www.rbc.ru/economics/?utm_source=topline", driver_path: str = None):
+        super().__init__(pages_url=pages_url, driver_path=driver_path)
+
 
 class RBCPoliticsParser(RBCParser):
     ARTICLES_BLOCK = "div"
@@ -68,28 +69,5 @@ class RBCPoliticsParser(RBCParser):
     URL_BLOCK = "div"
     URL_ATTR = {"class": "item__wrap l-col-center"}
 
-    @staticmethod
-    def _parse_date(date: str) -> datetime:
-        try:
-            # Извлекаем содержимое атрибута "datetime"
-            datetime_str = date.get("datetime")
-            # Парсим строку времени
-            date_obj = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S%z")
-            return date_obj
-        except (ValueError, TypeError):
-            return None
-
-if __name__ == "__main__":
-    buhgalteria_parser = RBCPoliticsParser("https://www.rbc.ru/politics/?utm_source=topline")
-
-    last_bd_time = datetime.now(tz=UTC) - timedelta(days=1)
-    first_test = buhgalteria_parser.parse(stop_datetime=last_bd_time)
-    min_loaded_date = min([article["post_dttm"] for article in first_test])
-    status = "✅" if min_loaded_date > last_bd_time else "❌"
-    logger.info(f"Тест №1 - остановимся по времени : {status}")
-
-    page_to_parse = 2
-    _ = buhgalteria_parser.parse(max_pages=page_to_parse)
-    second_test = buhgalteria_parser.page_parsed
-    status = "✅" if page_to_parse == second_test else "❌"
-    logger.info(f"Тест №2 - остановимся по страницам : {status}")
+    def __init__(self, pages_url="https://www.rbc.ru/politics/?utm_source=topline", driver_path: str = None):
+        super().__init__(pages_url=pages_url, driver_path=driver_path)

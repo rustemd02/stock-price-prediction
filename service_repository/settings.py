@@ -3,8 +3,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = '2002'
+    POSTGRES_USER: str = "unterlantas"
+    POSTGRES_PASSWORD: str = 'postgres'
     POSTGRES_HOST: str = "localhost"
     POSTGRES_DB: str = "nzv_cmd"
     SPIDER_WAIT_TIMEOUT_SEC: int = 60 * 60 * 1  # каждый час

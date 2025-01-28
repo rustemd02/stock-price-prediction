@@ -1,22 +1,27 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+
 from sklearn.model_selection import KFold, train_test_split
-from sklearn.metrics import classification_report, accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
+
 from joblib import dump
+
 from service_aggregator.dictionary_words import get_ngrams
 
-# Загрузка данных
-df = pd.read_csv("../static/newsv6.csv", header=None)
-df.columns = ['uuid', 'title', 'post_dttm', 'url', 'processed_dttm', 'type', "label"]
 
-# Преобразование столбца 'label' в числовой тип
-df['label'] = pd.to_numeric(df['label'], errors='coerce')
+# Ваш импорт get_ngrams(...) и т.д.
 
 
-def assign_label(score, epsilon):
+########################################
+# 1. Ручная функция assign_label
+########################################
+
+def assign_label(score: float, epsilon: float) -> int:
+    """Преобразует вещественное значение score в один из классов {-1, 0, 1},
+       в зависимости от порога epsilon."""
     if score > epsilon:
         return 1
     elif score < -epsilon:
@@ -25,77 +30,143 @@ def assign_label(score, epsilon):
         return 0
 
 
-# Предполагается, что функция get_ngrams определена где-то ранее
-X, feature_names, vectorizer = get_ngrams(df, ngram_range=(1, 2))
-weights = df['label']
+########################################
+# 2. Функция для поиска лучшего epsilon
+########################################
 
-epsilon_values = np.linspace(0.0, 0.5, 1000)
+def search_best_epsilon(X, labels, epsilon_candidates, n_splits=5):
+    """
+    Подбираем лучший epsilon, оценивая, как хорошо одна ИЗ моделей (в примере NaiveBayes)
+    предсказывает на кросс-валидации (KFold).
 
-# Создадим KFold для кросс-валидации
-kf = KFold(n_splits=5, shuffle=True, random_state=0)
+    Аргументы:
+    ---------
+    X : array-like или разреженная матрица
+        Матрица признаков (уже после get_ngrams).
+    labels : array-like
+        Вещественные тональности (df['label']), еще не дискретизированные.
+    epsilon_candidates : iterable
+        Список/массив значений epsilon, которые перебираем.
+    n_splits : int
+        Количество фолдов в KFold.
 
-best_epsilon = None
-best_accuracy = 0
+    Возвращает:
+    -----------
+    (best_epsilon, best_score) : кортеж
+        Лучшая найденная epsilon и средняя accuracy на фолдах.
+    """
 
-for epsilon in epsilon_values:
-    accuracies = []
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=0)
 
-    df['score'] = df['label'].apply(lambda x: assign_label(x, epsilon))
-    y = df['score']
+    # Для перебора epsilon используем простую модель; пусть это будет NB.
+    # Можно подставить любой один базовый классификатор, на котором будем "мерить"
+    # качество разбиения (LogisticRegression, SVC и т.д.).
+    base_clf = MultinomialNB()
 
-    for train_index, test_index in kf.split(X):
-        X_fold_train, X_fold_test = X[train_index], X[test_index]
-        y_fold_train, y_fold_test = y.iloc[train_index], y.iloc[test_index]
+    best_epsilon = None
+    best_score = 0.0
 
-        # Присваиваем метки тональности на основе текущего значения epsilon
-        y_pred = np.where(weights[test_index] > epsilon, 1, np.where(weights[test_index] < -epsilon, -1, 0))
+    for eps in epsilon_candidates:
+        fold_accuracies = []
 
-        # Оцениваем точность на текущем фолде
-        accuracy = accuracy_score(y_fold_test, y_pred)
-        accuracies.append(accuracy)
+        for train_idx, test_idx in kf.split(X):
+            # Формируем тренировочные и тестовые выборки
+            X_train, X_test = X[train_idx], X[test_idx]
 
-    # Средняя точность для текущего значения epsilon
-    mean_accuracy = np.mean(accuracies)
+            # "assign_label" для train и test
+            y_train = [assign_label(val, eps) for val in labels[train_idx]]
+            y_test = [assign_label(val, eps) for val in labels[test_idx]]
 
-    # Обновляем лучшее значение epsilon, если текущая точность выше
-    if mean_accuracy > best_accuracy and epsilon != 0:
-        best_accuracy = mean_accuracy
-        best_epsilon = epsilon
+            # Обучаем выбранную модель
+            base_clf.fit(X_train, y_train)
 
-print(f'Лучшее значение epsilon: {best_epsilon}')
-print(f'Наилучшая точность: {best_accuracy}')
+            # Предсказываем
+            y_pred = base_clf.predict(X_test)
 
-df['score'] = df['label'].apply(lambda x: assign_label(x, best_epsilon))
-y = df['score']
+            # Оцениваем точность на фолде
+            fold_acc = accuracy_score(y_test, y_pred)
+            fold_accuracies.append(fold_acc)
 
-print(df['score'].value_counts())  # Пересчитываем метки на основе лучшего значения epsilon
+        # Средняя accuracy по всем фолдам
+        mean_acc = np.mean(fold_accuracies)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+        if mean_acc > best_score:
+            best_score = mean_acc
+            best_epsilon = eps
 
-# Тренируем модели на основе пересчитанных меток
-classifiers = {
-    "Logistic Regression": LogisticRegression(max_iter=1000),
-    "Naive Bayes": MultinomialNB(),
-    "Support Vector Machine": SVC(probability=True)
-}
+    return best_epsilon, best_score
 
-for name, clf in classifiers.items():
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    print(f"Results for {name}:")
-    print(classification_report(y_test, y_pred, zero_division=0))
 
-# Выбор оптимального классификатора на основе метрик
-best_clf_name = None
-best_clf_score = 0
-for name, clf in classifiers.items():
-    score = clf.score(X_test, y_test)
-    if score > best_clf_score:
-        best_clf_score = score
-        best_clf_name = name
+########################################
+# 3. Основной код
+########################################
 
-print(f"Best classifier: {best_clf_name} with score {best_clf_score}")
+if __name__ == "__main__":
+    # 1) Загружаем данные
+    df = pd.read_csv("../static/newsv6.csv", header=None)
+    df.columns = ['uuid', 'title', 'post_dttm', 'url',
+                  'processed_dttm', 'type', 'label']
 
-best_clf = classifiers[best_clf_name]
-dump(best_clf, 'model/best_classifier.joblib')
-dump(vectorizer, 'model/vectorizer.joblib')
+    # Преобразуем метки в float (если были строки и т.п.)
+    df['label'] = pd.to_numeric(df['label'], errors='coerce')
+
+    # 2) Генерируем n-граммы (X, vectorizer, ...)
+    #    Предполагается, что get_ngrams возвращает (X, feature_names, vectorizer)
+    X, feature_names, vectorizer = get_ngrams(df, ngram_range=(1, 2))
+
+    # Наша "исходная" вещественная тональность
+    labels = df['label'].values
+
+    # 3) Перебираем значения epsilon
+    epsilon_values = np.linspace(0.0, 0.5, 1000)
+
+    best_epsilon, best_cv_score = search_best_epsilon(
+        X, labels, epsilon_values, n_splits=5
+    )
+    print(f"Лучший epsilon = {best_epsilon}, средняя accuracy на 5 фолдах = {best_cv_score:.3f}")
+
+    # 4) Теперь, когда epsilon найден,
+    #    формируем "итоговые" метки (y) для обучения финальной модели
+    df['score'] = df['label'].apply(lambda x: assign_label(x, best_epsilon))
+    y = df['score'].values
+
+    print("Распределение классов после assign_label:")
+    print(df['score'].value_counts())
+
+    # 5) Делим на train/test (если данные не очень большие и нет специфики временного ряда)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # 6) Тренируем несколько классификаторов
+    classifiers = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Naive Bayes": MultinomialNB(),
+        "Support Vector Machine": SVC(probability=True)
+    }
+
+    best_clf_name = None
+    best_clf_score = 0.0
+    best_clf = None
+
+    for name, clf in classifiers.items():
+        clf.fit(X_train, y_train)
+        y_pred = clf.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+
+        print(f"\n=== {name} ===")
+        print(f"Accuracy: {acc:.3f}")
+        print(classification_report(y_test, y_pred, zero_division=0))
+
+        if acc > best_clf_score:
+            best_clf_score = acc
+            best_clf_name = name
+            best_clf = clf
+
+    print(f"\nЛучший классификатор: {best_clf_name} c accuracy = {best_clf_score:.3f}")
+
+    # 7) Сохраняем лучший классификатор и vectorizer
+    dump(best_clf, 'model/best_classifier.joblib')
+    dump(vectorizer, 'model/vectorizer.joblib')
+
+    print("Готово. Модель и vectorizer сохранены.")
