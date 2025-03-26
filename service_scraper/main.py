@@ -34,9 +34,6 @@ def get_last_post_dttm(period_days: int) -> datetime:
 
 
 def save_last_news(news: List[dict], last_post_dttm: datetime, type_source: str):
-    """
-    Сохраняем полученные новости в БД, если их ещё нет.
-    """
     news_models = []
     processed_dttm = datetime.now().replace(tzinfo=None)
 
@@ -59,7 +56,7 @@ def save_last_news(news: List[dict], last_post_dttm: datetime, type_source: str)
                 url=row["url"],
                 processed_dttm=processed_dttm,
                 type=type_source,
-                label=row.get("label") or row.get("lable")  # учитываем возможную опечатку
+                label=row.get("label") or row.get("lable")
             )
         )
 
@@ -83,9 +80,7 @@ def run_spider():
                     news = parser.parse(stop_datetime=last_post_dttm)
                     logger.info(f"Получено {len(news)} новостей от {parser.pages_url}")
                     if news:
-                        # sentiment
                         news = calculate_and_save_sentiment_scores(news)
-                        # save
                         save_last_news(news, last_post_dttm, type_source)
                         logger.info(f"Парсинг завершён: {type_source} | {parser.pages_url}")
                     else:

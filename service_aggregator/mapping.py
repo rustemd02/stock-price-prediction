@@ -1,7 +1,6 @@
 import pandas as pd
 from datetime import datetime
 
-# не используется
 # Загружаем данные из CSV-файлов
 df1 = pd.read_csv('../last-work/sentiment-analysis/news_sentimentv5.csv')
 df2 = pd.read_csv('../static/news_sentiment.csv')

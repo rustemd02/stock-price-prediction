@@ -13,13 +13,11 @@ from joblib import load
 from pymystem3 import Mystem
 
 nltk.download('wordnet')
-# Загрузка данных из файла
 data = pd.read_csv('../service_aggregator/news_with_probabilities.csv')
 
 data['date'] = pd.to_datetime(data['post_dttm']).dt.date
 
 
-# Инициализация лемматизатора NLTK
 mystem = Mystem()
 tokenizer = WordPunctTokenizer()
 stop_words = set(stopwords.words('russian'))
@@ -32,39 +30,32 @@ def preprocess_text(text):
 
 def get_probabilities(df):
     df['cleaned_text'] = df['title'].apply(preprocess_text)
-    vectorizer = load('model/vectorizer.joblib')
+    vectorizer = load('model/vectorizer_1.joblib')
     X_new = vectorizer.transform(df['cleaned_text'])
-    clf = load('model/best_classifier.joblib')
-    # Предсказание вероятностей
+    clf = load('model/best_classifier_1.joblib')
+
     y_prob_new = clf.predict_proba(X_new)
     class_labels = clf.classes_
 
-    # Получение класса с самой высокой вероятностью
     best_labels = [class_labels[probs.argmax()] for probs in y_prob_new]
     df['lable'] = best_labels
 
     return df
 
 def save_sentiment_scores_to_csv(news_data):
-    # Создаем DataFrame из новостей
     df = pd.DataFrame(news_data)
 
-    # Подготавливаем данные для сохранения
     df_to_save = df[['post_dttm', 'lable']].rename(columns={'post_dttm': 'TRADEDATE', 'lable': 'SentScore'})
 
-    # Определяем путь к файлу относительно текущего скрипта
     base_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(base_dir, '..', 'static', 'news_sentiment.csv')
 
-    # Проверяем, существует ли файл
     file_exists = os.path.isfile(file_path)
 
-    # Сохраняем данные в файл, добавляя новые строки
     with open(file_path, 'a', newline='', encoding='utf-8') as csvfile:
         fieldnames = ['TRADEDATE', 'SentScore']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
-        # Если файл не существует, записываем заголовки
         if not file_exists:
             writer.writeheader()
 
@@ -74,20 +65,15 @@ def save_sentiment_scores_to_csv(news_data):
     print(f"Sentiment scores saved to {file_path}")
 
 def calculate_and_save_sentiment_scores(news_data):
-    # Очистка и форматирование данных
     news_data = format_news_data(news_data)
 
-    # Убедитесь, что news_data является DataFrame
     if not isinstance(news_data, pd.DataFrame):
         news_data = pd.DataFrame(news_data)
 
-    # Предсказание lable
     news_data = get_probabilities(news_data)
 
-    # Сохранение результатов в CSV файл
     save_sentiment_scores_to_csv(news_data)
 
-    # Преобразование DataFrame в список словарей
     return news_data.to_dict(orient='records')
 
 def format_news_data(news_data):
