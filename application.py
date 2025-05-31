@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request, render_template
 from sqlalchemy.orm import sessionmaker
 from service_repository.database import engine
 from service_repository.crud import get_corpus_by_date_range
+import nltk
 
 app = Flask(__name__)
 

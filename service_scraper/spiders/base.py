@@ -104,6 +104,7 @@ class BaseParser(ABC):
 
         # Открываем браузер
         driver = self._create_driver()
+        logger.info("Драйвер создан")
         logger.info(f"Открыт {self.pages_url}")
         driver.get(self.pages_url)
         time.sleep(2)  # даём странице чуть-чуть времени подгрузиться
@@ -143,10 +144,52 @@ class BaseParser(ABC):
         # Преобразуем в список словарей, т.к. у вас дальше в коде идет asdict
         return [asdict(news_item) for news_item in result]
 
+    def debug_selectors(self, html: str):
+        """Отладочный метод для проверки селекторов"""
+        soup = BeautifulSoup(html, "html.parser")
+
+        logger.info(f"=== ОТЛАДКА СЕЛЕКТОРОВ ===")
+        logger.info(f"ARTICLES_BLOCK: {self.ARTICLES_BLOCK}, ARTICLES_ATTR: {self.ARTICLES_ATTR}")
+
+        articles_block = soup.find(self.ARTICLES_BLOCK, self.ARTICLES_ATTR)
+        if articles_block:
+            logger.info(f"✓ Блок статей найден")
+            articles = articles_block.find_all(self.ARTICLE_BLOCK, class_=self.ARTICLE_ATTR)
+            logger.info(f"✓ Найдено статей: {len(articles)}")
+
+            if articles:
+                first_article = articles[0]
+                logger.info(f"=== ПЕРВАЯ СТАТЬЯ ===")
+                logger.info(f"HTML первой статьи: {str(first_article)[:500]}...")
+
+                # Проверяем URL
+                if self.URL_BLOCK and self.URL_ATTR:
+                    url_tag = first_article.find(self.URL_BLOCK, self.URL_ATTR)
+                    logger.info(f"URL_BLOCK найден: {url_tag is not None}")
+                    if url_tag:
+                        a_tag = url_tag.find('a')
+                        logger.info(f"A-тег в URL_BLOCK: {a_tag is not None}")
+                        if a_tag:
+                            logger.info(f"href: {a_tag.get('href')}")
+
+                # Проверяем дату
+                date_tag = first_article.find(self.DATE_BLOCK, self.DATE_ATTR)
+                logger.info(f"DATE_BLOCK найден: {date_tag is not None}")
+                if date_tag:
+                    logger.info(f"Содержимое даты: '{date_tag.get_text(strip=True)}'")
+
+                # Проверяем заголовок
+                title_tag = first_article.find(self.TITLE_BLOCK, self.TITLE_ATTR)
+                logger.info(f"TITLE_BLOCK найден: {title_tag is not None}")
+                if title_tag:
+                    logger.info(f"Заголовок: '{title_tag.get_text(strip=True)[:100]}...'")
+        else:
+            logger.error(f"✗ Блок статей НЕ найден")
+
     def _parse_page_html(
-        self,
-        html: str,
-        stop_datetime: Optional[datetime] = None
+            self,
+            html: str,
+            stop_datetime: Optional[datetime] = None
     ) -> (List[News], bool):
         """
         Разбор HTML, взятого из driver.page_source.
@@ -154,55 +197,91 @@ class BaseParser(ABC):
         """
         soup = BeautifulSoup(html, "html.parser")
         articles_block = soup.find(self.ARTICLES_BLOCK, self.ARTICLES_ATTR)
+
         if not articles_block:
-            logger.error("Не найден блок статей на странице.")
+            logger.error(f"Не найден блок статей: {self.ARTICLES_BLOCK} с атрибутами {self.ARTICLES_ATTR}")
             return [], False
 
         articles = articles_block.find_all(self.ARTICLE_BLOCK, class_=self.ARTICLE_ATTR)
         logger.info(f"Найдено {len(articles)} статей на странице.")
+
         data = []
         for article in tqdm(articles):
-            # URL
+            # URL - исправленная логика
             if self.URL_BLOCK and self.URL_ATTR:
-                url_tag = article.find(self.URL_BLOCK, self.URL_ATTR)
-                if not url_tag or not url_tag.a:
-                    continue
-                url = url_tag.a.get('href')
+                if self.URL_BLOCK == "a":
+                    # Если URL_BLOCK сам является тегом 'a'
+                    url_tag = article.find(self.URL_BLOCK, self.URL_ATTR)
+                    if not url_tag:
+                        logger.debug(f"Не найден URL_BLOCK: {self.URL_BLOCK} с атрибутами {self.URL_ATTR}")
+                        continue
+                    url = url_tag.get('href')
+                else:
+                    # Если URL_BLOCK содержит тег 'a'
+                    url_tag = article.find(self.URL_BLOCK, self.URL_ATTR)
+                    if not url_tag:
+                        logger.debug(f"Не найден URL_BLOCK: {self.URL_BLOCK} с атрибутами {self.URL_ATTR}")
+                        continue
+                    a_tag = url_tag.find('a')
+                    if not a_tag:
+                        logger.debug(f"Не найден a-тег в URL_BLOCK")
+                        continue
+                    url = a_tag.get('href')
             else:
-                # Если не заданы отдельные блоки - берём первую <a>
+                # Если не заданы отдельные блоки - берём первую ссылку
                 a_tag = article.find('a')
                 if not a_tag:
+                    logger.debug(f"Не найден a-тег")
                     continue
                 url = a_tag.get('href')
 
-            if not url or url in self.processed_links:
+            if not url:
+                logger.debug(f"Пустой URL")
                 continue
+
+            if url in self.processed_links:
+                logger.debug(f"Дубликат URL: {url}")
+                continue
+
+            # Дополняем относительные URL
+            if url.startswith('/'):
+                base_url = 'https://www.rbc.ru'
+                url = base_url + url
 
             self.processed_links.add(url)
 
             # Дата
             raw_date_tag = article.find(self.DATE_BLOCK, self.DATE_ATTR)
             if not raw_date_tag:
-                # если нет даты - пропускаем
+                logger.debug(f"Не найден DATE_BLOCK: {self.DATE_BLOCK} с атрибутами {self.DATE_ATTR}")
                 continue
+
             try:
                 post_date = self._parse_date(raw_date_tag)
             except Exception as e:
                 logger.warning(f"Не удалось распарсить дату: {e}")
+                logger.debug(f"Содержимое тега даты: {raw_date_tag.get_text(strip=True)}")
                 continue
 
             if not post_date:
+                logger.debug(f"Дата не получена после парсинга")
                 continue
 
             # Проверяем ограничение по времени
             if stop_datetime and post_date < stop_datetime:
+                logger.info(f"Достигнуто ограничение по времени: {post_date} < {stop_datetime}")
                 return data, True
 
             # Заголовок
             title_tag = article.find(self.TITLE_BLOCK, self.TITLE_ATTR)
             if not title_tag:
+                logger.debug(f"Не найден TITLE_BLOCK: {self.TITLE_BLOCK} с атрибутами {self.TITLE_ATTR}")
                 continue
+
             title = title_tag.get_text(strip=True)
+            if not title:
+                logger.debug(f"Пустой заголовок")
+                continue
 
             news_obj = News(
                 url=url,
@@ -211,5 +290,11 @@ class BaseParser(ABC):
                 source=self.source,
                 uuid=str(uuid.uuid4())
             )
+
             data.append(news_obj)
+            logger.debug(f"Статья добавлена: {title[:50]}...")
+
+        logger.info(f"Успешно обработано статей: {len(data)}")
         return data, False
+
+

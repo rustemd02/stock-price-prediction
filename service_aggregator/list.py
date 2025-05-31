@@ -13,6 +13,7 @@ from joblib import load
 from pymystem3 import Mystem
 
 nltk.download('wordnet')
+nltk.download('stopwords')
 data = pd.read_csv('../service_aggregator/news_with_probabilities.csv')
 
 data['date'] = pd.to_datetime(data['post_dttm']).dt.date

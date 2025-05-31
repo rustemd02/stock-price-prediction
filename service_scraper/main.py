@@ -16,13 +16,13 @@ from service_scraper.spiders.ria import RIAParser
 
 SOURCES = {
     "economic": [
-        RBCEconomicsParser("https://www.rbc.ru/economics/?utm_source=topline", driver_path="/Users/unterlantas/Downloads/Katalon/chromedriver"),
-        RBCParser("https://quote.rbc.ru/?utm_source=topline", driver_path="/Users/unterlantas/Downloads/Katalon/chromedriver"),
-        RIAParser("https://ria.ru/economy/", driver_path="/Users/unterlantas/Downloads/Katalon/chromedriver")
+        RBCEconomicsParser("https://www.rbc.ru/economics/?utm_source=topline", driver_path="/Users/unterlantas/Documents/таланов/chromedriver/chromedriver"),
+        RBCParser("https://quote.rbc.ru/?utm_source=topline", driver_path="/Users/unterlantas/Documents/таланов/chromedriver/chromedriver"),
+        RIAParser("https://ria.ru/economy/", driver_path="/Users/unterlantas/Documents/таланов/chromedriver/chromedriver")
     ],
     "political": [
-        RIAParser("https://ria.ru/politics/", driver_path="/Users/unterlantas/Downloads/Katalon/chromedriver"),
-        RBCPoliticsParser("https://www.rbc.ru/politics/?utm_source=topline", driver_path="/Users/unterlantas/Downloads/Katalon/chromedriver")
+        RIAParser("https://ria.ru/politics/", driver_path="/Users/unterlantas/Documents/таланов/chromedriver/chromedriver"),
+        RBCPoliticsParser("https://www.rbc.ru/politics/?utm_source=topline", driver_path="/Users/unterlantas/Documents/таланов/chromedriver/chromedriver")
     ]
 }
 
